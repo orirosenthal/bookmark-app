@@ -48,6 +48,42 @@
       letter-spacing: 0.05em;
     }
 
+    .card.editing {
+      border: 2px solid #4f46e5;
+    }
+
+    .card.editing h2 {
+      color: #4f46e5;
+    }
+
+    .form-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 6px;
+    }
+
+    .form-actions button[type="submit"] {
+      margin-top: 0;
+      flex: 1;
+    }
+
+    #cancel-edit {
+      flex: 0 0 auto;
+      padding: 12px 20px;
+      background: #f3f4f6;
+      color: #555;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    #cancel-edit:hover {
+      background: #e5e7eb;
+    }
+
     .form-group {
       margin-bottom: 18px;
     }
@@ -210,18 +246,33 @@
       align-self: center;
     }
 
+    .bookmark-actions {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      align-self: center;
+      flex-shrink: 0;
+    }
+
+    .bookmark-edit,
     .bookmark-delete {
       background: none;
       border: none;
       cursor: pointer;
-      color: #ccc;
-      font-size: 1.1rem;
-      padding: 0 0 0 8px;
-      transition: color 0.2s;
-      align-self: center;
+      font-size: 1rem;
+      padding: 4px 6px;
+      border-radius: 6px;
+      transition: background 0.15s, color 0.15s;
+      color: #bbb;
+    }
+
+    .bookmark-edit:hover {
+      background: #ede9fe;
+      color: #4f46e5;
     }
 
     .bookmark-delete:hover {
+      background: #fee2e2;
       color: #ef4444;
     }
 
@@ -274,9 +325,9 @@
   <div class="container">
     <h1>Bookmark Manager</h1>
 
-    <!-- Add Bookmark Form -->
-    <div class="card">
-      <h2>Add Bookmark</h2>
+    <!-- Add / Edit Bookmark Form -->
+    <div class="card" id="form-card">
+      <h2 id="form-title">Add Bookmark</h2>
       <form id="bookmark-form">
         <div class="form-group">
           <label for="url">URL</label>
@@ -298,7 +349,10 @@
             <option value="Other">Other</option>
           </select>
         </div>
-        <button type="submit">Save Bookmark</button>
+        <div class="form-actions">
+          <button type="submit" id="form-submit">Save Bookmark</button>
+          <button type="button" id="cancel-edit" style="display:none">Cancel</button>
+        </div>
       </form>
     </div>
 
@@ -319,6 +373,10 @@
     const form = document.getElementById('bookmark-form');
     const list = document.getElementById('bookmark-list');
     const searchInput = document.getElementById('search');
+    const formCard = document.getElementById('form-card');
+    const formTitle = document.getElementById('form-title');
+    const formSubmit = document.getElementById('form-submit');
+    const cancelEdit = document.getElementById('cancel-edit');
 
     const CATEGORY_ICONS = {
       Work: '💼',
@@ -330,11 +388,35 @@
     };
 
     let bookmarks = JSON.parse(localStorage.getItem('bookmarks') || '[]');
+    let editingIndex = null;
 
     function highlight(text, query) {
       if (!query) return text;
       const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       return text.replace(new RegExp(`(${escaped})`, 'gi'), '<mark class="highlight">$1</mark>');
+    }
+
+    function startEdit(i) {
+      const b = bookmarks[i];
+      editingIndex = i;
+      form.url.value = b.url;
+      form.title.value = b.title;
+      form.category.value = b.category;
+      formTitle.textContent = 'Edit Bookmark';
+      formSubmit.textContent = 'Update Bookmark';
+      cancelEdit.style.display = 'inline-block';
+      formCard.classList.add('editing');
+      formCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      form.url.focus();
+    }
+
+    function cancelEditMode() {
+      editingIndex = null;
+      form.reset();
+      formTitle.textContent = 'Add Bookmark';
+      formSubmit.textContent = 'Save Bookmark';
+      cancelEdit.style.display = 'none';
+      formCard.classList.remove('editing');
     }
 
     function render() {
@@ -376,7 +458,10 @@
                   <div class="bookmark-title"><a href="${b.url}" target="_blank" rel="noopener">${highlight(b.title, query)}</a></div>
                   <div class="bookmark-url">${highlight(b.url, query)}</div>
                 </div>
-                <button class="bookmark-delete" data-index="${b.index}" title="Remove">✕</button>
+                <div class="bookmark-actions">
+                  <button class="bookmark-edit" data-index="${b.index}" title="Edit">✎</button>
+                  <button class="bookmark-delete" data-index="${b.index}" title="Remove">✕</button>
+                </div>
               </div>
             `).join('')}
           </div>
@@ -385,6 +470,7 @@
     }
 
     searchInput.addEventListener('input', render);
+    cancelEdit.addEventListener('click', cancelEditMode);
 
     form.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -392,22 +478,35 @@
         url: form.url.value.trim(),
         title: form.title.value.trim(),
         category: form.category.value,
-        addedAt: Date.now(),
+        addedAt: editingIndex !== null ? bookmarks[editingIndex].addedAt : Date.now(),
       };
-      bookmarks.unshift(bookmark);
+
+      if (editingIndex !== null) {
+        bookmarks[editingIndex] = bookmark;
+        cancelEditMode();
+      } else {
+        bookmarks.unshift(bookmark);
+        form.reset();
+        form.url.focus();
+      }
+
       localStorage.setItem('bookmarks', JSON.stringify(bookmarks));
       render();
-      form.reset();
-      form.url.focus();
     });
 
     list.addEventListener('click', (e) => {
-      const btn = e.target.closest('.bookmark-delete');
-      if (!btn) return;
-      const i = parseInt(btn.dataset.index, 10);
-      bookmarks.splice(i, 1);
-      localStorage.setItem('bookmarks', JSON.stringify(bookmarks));
-      render();
+      if (e.target.closest('.bookmark-edit')) {
+        const i = parseInt(e.target.closest('.bookmark-edit').dataset.index, 10);
+        startEdit(i);
+        return;
+      }
+      if (e.target.closest('.bookmark-delete')) {
+        const i = parseInt(e.target.closest('.bookmark-delete').dataset.index, 10);
+        if (editingIndex === i) cancelEditMode();
+        bookmarks.splice(i, 1);
+        localStorage.setItem('bookmarks', JSON.stringify(bookmarks));
+        render();
+      }
     });
 
     render();
